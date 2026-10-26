@@ -51,6 +51,12 @@ spotless {
       )
     }
   } else {
+    kotlin {
+      target("src/*/kotlin/**/*.kt")
+      ktfmt().googleStyle()
+      licenseHeaderFile(layout.settingsDirectory.file("codestyle/copyright-header-java.txt"))
+      endWithNewline()
+    }
     java {
       target("src/*/java/**/*.java")
       googleJavaFormat()

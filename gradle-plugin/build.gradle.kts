@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 plugins {
   alias(libs.plugins.kotlin.jvm)
   alias(libs.plugins.plugin.publish)
@@ -42,9 +45,94 @@ gradlePlugin {
   }
 }
 
-dependencies {}
+java {
+  sourceCompatibility = JavaVersion.VERSION_17
+  targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType<JavaCompile>().configureEach { options.release = 17 }
+
+kotlin {
+  compilerOptions {
+    jvmTarget = JvmTarget.JVM_17
+    languageVersion = KotlinVersion.KOTLIN_2_2
+    apiVersion = KotlinVersion.KOTLIN_2_2
+  }
+}
+
+dependencies {
+  // Gradle 9.1 supplies Kotlin 2.2.0. Do not ship a newer, relocated Kotlin runtime.
+  compileOnly(kotlin("stdlib", "2.2.0"))
+  testImplementation(gradleTestKit())
+  testImplementation(platform(libs.junit.bom))
+  testImplementation("org.junit.jupiter:junit-jupiter")
+  testImplementation(libs.assertj.core)
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+// Test fixtures are internal test support, not part of the plugin's publication API.
+(components["java"] as AdhocComponentWithVariants).apply {
+  withVariantsFromConfiguration(configurations["testFixturesApiElements"]) { skip() }
+  withVariantsFromConfiguration(configurations["testFixturesRuntimeElements"]) { skip() }
+}
+
+publishing {
+  repositories {
+    maven {
+      name = "functionalTest"
+      url = layout.settingsDirectory.dir("build/functional-test-repository").asFile.toURI()
+    }
+  }
+}
+
+testing {
+  suites {
+    @Suppress("UnstableApiUsage") named<JvmTestSuite>("test") { useJUnitJupiter() }
+
+    @Suppress("UnstableApiUsage")
+    register<JvmTestSuite>("functionalTest") {
+      useJUnitJupiter(libs.junit.bom.get().version!!)
+      dependencies {
+        implementation(gradleTestKit())
+        implementation(libs.assertj.core)
+      }
+      targets.all {
+        testTask.configure {
+          dependsOn(
+            ":publishMavenJavaPublicationToFunctionalTestRepository",
+            "publishPluginMavenPublicationToFunctionalTestRepository",
+            "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository",
+          )
+          inputs.dir(layout.settingsDirectory.dir("build/functional-test-repository"))
+          systemProperty(
+            "plugin.repository",
+            layout.settingsDirectory.dir("build/functional-test-repository").asFile.absolutePath,
+          )
+          systemProperty("plugin.version", project.version.toString())
+          systemProperty(
+            "plugin.shaded.jar",
+            tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath,
+          )
+          systemProperty("gradle.installation", gradle.gradleHomeDir!!.absolutePath)
+          systemProperty("test.gradle.user.home", gradle.gradleUserHomeDir.absolutePath)
+          shouldRunAfter(tasks.named("test"))
+        }
+      }
+    }
+  }
+}
 
 tasks {
+  matching {
+    it.name == "publishPluginMavenPublicationToFunctionalTestRepository" ||
+      it.name == "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository"
+  }
+    .configureEach { dependsOn(":resetFunctionalTestRepository") }
+
+  named("check") {
+    @Suppress("UnstableApiUsage") dependsOn(testing.suites.named("functionalTest"))
+  }
+
   shadowJar {
     exclude("META-INF/*.kotlin_module")
     enableAutoRelocation = true

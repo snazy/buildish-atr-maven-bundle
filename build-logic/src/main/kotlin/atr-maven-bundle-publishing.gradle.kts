@@ -25,7 +25,10 @@ plugins {
 
 publishing {
   publications {
-    register<MavenPublication>("mavenJava")
+    // java-gradle-plugin supplies pluginMaven (including Shadow integration).
+    if (!plugins.hasPlugin("java-gradle-plugin")) {
+      register<MavenPublication>("mavenJava")
+    }
 
     withType(MavenPublication::class.java) {
       val projectName = project.name

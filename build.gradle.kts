@@ -90,3 +90,24 @@ tasks.named<Wrapper>("wrapper") {
     scriptFile.writeText(scriptLines.joinToString("\n"))
   }
 }
+
+// The packaged consumer resolves the real marker, implementation and parent POM locally.
+publishing {
+  repositories {
+    maven {
+      name = "functionalTest"
+      url = layout.buildDirectory.dir("functional-test-repository").get().asFile.toURI()
+    }
+  }
+}
+
+tasks {
+  val resetFunctionalTestRepository =
+    register<Delete>("resetFunctionalTestRepository") {
+      delete(layout.buildDirectory.dir("functional-test-repository"))
+    }
+
+  named("publishMavenJavaPublicationToFunctionalTestRepository") {
+    dependsOn(resetFunctionalTestRepository)
+  }
+}
